@@ -1,0 +1,7 @@
+[
+  { "label": "Medication", "text": "The patient was prescribed metformin for type 2 diabetes." },
+  { "label": "Cardiology", "text": "Myocardial infarction was associated with elevated troponin." },
+  { "label": "Rare terminology", "text": "Thrombocytopenia and cardiomyopathy require further evaluation." },
+  { "label": "Case, units, and Unicode", "text": "BRCA1: 5 mg, 37\u00b0C, \u03b2-blocker." },
+  { "label": "General-language control", "text": "The train arrived early and we walked to the coffee shop." }
+]

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Visual references for the medical BPE pipeline, fair evaluation, and tokenizer/model compatibility.">
+  <title>Visual Reference | Building a Medical Tokenizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+  <main class="diagram-page">
+    <a href="../index.html">&larr; Building a Medical Tokenizer</a>
+    <header><p class="eyebrow">Companion diagrams / medtok</p><h1>From corpus to token IDs.</h1><p>Three boundaries to keep distinct: learning a vocabulary, evaluating it, and connecting it to a model.</p></header>
+    <section id="byte-pipeline"><p class="eyebrow">01 / The tokenizer pipeline</p><h2>Training learns. Encoding applies.</h2>
+      <ol class="pipeline"><li><span>TRAINING INPUT</span><strong>Prepared medical documents</strong><p>Deduplicate and split. Only training documents supply the pair frequencies.</p></li><li><span>TRAINING OUTPUT</span><strong>Vocabulary + ranked merges</strong><p>ByteLevel pre-tokenization, a 256-byte alphabet, and BPE with a 16k target.</p></li><li><span>ENCODING INPUT</span><strong>Previously unseen text</strong><p>Use the frozen pre-tokenizer and learned merges. No new vocabulary is learned.</p></li><li><span>ENCODING OUTPUT</span><strong>Pieces mapped to IDs</strong><p>The byte-level decoder reconstructs text from the complete ID sequence.</p></li></ol>
+      <div class="formula"><span>Text</span><strong>pre-tokenize &rarr; apply BPE &rarr; IDs &rarr; decode</strong></div>
+      <p>Byte-level display symbols are not literal additions to the input. Offsets describe spans; trimming offsets is not the same as removing whitespace from decoded text.</p><a href="../index.html#pipeline">Read the pipeline lesson &rarr;</a>
+    </section>
+    <section id="fair-comparison"><p class="eyebrow">02 / The experiment</p><h2>Two training domains. Two test domains.</h2>
+      <div class="table-scroll"><table><caption>Same BPE recipe and vocabulary target for the controlled pair</caption><thead><tr><th></th><th>Medical test</th><th>General test</th></tr></thead><tbody><tr><th>Medical-trained BPE</th><td>Domain efficiency</td><td>Transfer cost</td></tr><tr><th>General-trained BPE</th><td>Matched baseline</td><td>General efficiency</td></tr></tbody></table></div>
+      <figure><img src="../assets/probe-counts.png" width="1100" height="470" alt="Five synthetic probes compare actual medical and general tokenizer counts; the medical tokenizer uses fewer pieces on the four medical probes and more on the general-language probe."><figcaption>A small inspection snapshot illustrates the design. It cannot replace corpus-level evaluation.</figcaption></figure>
+      <p>Keep the text, metric denominator, special-token policy, and evaluation sample count identical. Report training bytes and actual vocabulary sizes. Deduplicated train/test separation can be checked for your own tokenizers, not for external baselines with unknown training corpora.</p><a href="../index.html#evaluate">Read the evaluation lesson &rarr;</a>
+    </section>
+    <section id="model-boundary"><p class="eyebrow">03 / The model contract</p><h2>A token ID is an embedding address.</h2>
+      <div class="compatibility-grid"><div><span class="path-label">PRETRAINED PATH</span><h3>Original tokenizer</h3><p>Original IDs &rarr; learned embedding rows &rarr; existing model. Keep this contract for ordinary fine-tuning.</p></div><div><span class="path-label">NEW VOCABULARY PATH</span><h3>Custom tokenizer</h3><p>New IDs &rarr; compatible learned embeddings &rarr; a model trained or deliberately adapted for those IDs.</p></div></div>
+      <div class="callout warning"><strong>Resizing is not remapping.</strong><p>Adding enough embedding rows changes a matrix's shape. It does not teach those rows what your new pieces mean.</p></div><a href="../index.html#compatibility">Read the model-boundary lesson &rarr;</a>
+    </section>
+    <footer><span>Building a Medical Tokenizer</span><a href="../index.html">Return to the article &rarr;</a></footer>
+  </main>
+</body>
+</html>

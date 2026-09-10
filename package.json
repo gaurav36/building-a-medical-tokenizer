@@ -1,0 +1,9 @@
+{
+  "name": "medical-tokenization-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An illustrated, source-grounded guide to building a medical-domain tokenizer with medtok.",
+  "scripts": {
+    "test": "node --test tests/*.mjs"
+  }
+}

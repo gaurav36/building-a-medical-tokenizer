@@ -1,0 +1,410 @@
+globalThis.MedicalExamples = {
+  "library": "tokenizers",
+  "version": "0.23.2",
+  "models": {
+    "medical": {
+      "path": "artifacts/medical-bpe-pubmed/tokenizer.json",
+      "sha256": "749c01f9a0f942ab135dfaf789f26833cdff23bf401710a4072b59255843960b",
+      "vocabularySize": 16000
+    },
+    "general": {
+      "path": "artifacts/general-bpe/tokenizer.json",
+      "sha256": "fddf42cec1144ff7511b591bd593d787100b4021843c1694e77767607510a086",
+      "vocabularySize": 16000
+    }
+  },
+  "examples": [
+    {
+      "label": "Medication",
+      "text": "The patient was prescribed metformin for type 2 diabetes.",
+      "medical": {
+        "tokens": [
+          "The",
+          "\u0120patient",
+          "\u0120was",
+          "\u0120prescribed",
+          "\u0120met",
+          "form",
+          "in",
+          "\u0120for",
+          "\u0120type",
+          "\u01202",
+          "\u0120diabetes",
+          "."
+        ],
+        "ids": [
+          520,
+          1091,
+          336,
+          14190,
+          2070,
+          764,
+          258,
+          349,
+          1229,
+          423,
+          3541,
+          15
+        ],
+        "decoded": "The patient was prescribed metformin for type 2 diabetes."
+      },
+      "general": {
+        "tokens": [
+          "The",
+          "\u0120patient",
+          "\u0120was",
+          "\u0120pres",
+          "cribed",
+          "\u0120met",
+          "form",
+          "in",
+          "\u0120for",
+          "\u0120type",
+          "\u01202",
+          "\u0120di",
+          "abet",
+          "es",
+          "."
+        ],
+        "ids": [
+          570,
+          14607,
+          318,
+          900,
+          9077,
+          927,
+          712,
+          261,
+          336,
+          2933,
+          352,
+          3127,
+          12425,
+          279,
+          15
+        ],
+        "decoded": "The patient was prescribed metformin for type 2 diabetes."
+      }
+    },
+    {
+      "label": "Cardiology",
+      "text": "Myocardial infarction was associated with elevated troponin.",
+      "medical": {
+        "tokens": [
+          "My",
+          "ocardial",
+          "\u0120infarction",
+          "\u0120was",
+          "\u0120associated",
+          "\u0120with",
+          "\u0120elevated",
+          "\u0120troponin",
+          "."
+        ],
+        "ids": [
+          9654,
+          6769,
+          3216,
+          336,
+          1218,
+          322,
+          2731,
+          15944,
+          15
+        ],
+        "decoded": "Myocardial infarction was associated with elevated troponin."
+      },
+      "general": {
+        "tokens": [
+          "M",
+          "y",
+          "oc",
+          "ard",
+          "ial",
+          "\u0120inf",
+          "ar",
+          "ction",
+          "\u0120was",
+          "\u0120associated",
+          "\u0120with",
+          "\u0120elevated",
+          "\u0120trop",
+          "on",
+          "in",
+          "."
+        ],
+        "ids": [
+          46,
+          90,
+          440,
+          427,
+          497,
+          1096,
+          282,
+          631,
+          318,
+          3807,
+          355,
+          14223,
+          14670,
+          264,
+          261,
+          15
+        ],
+        "decoded": "Myocardial infarction was associated with elevated troponin."
+      }
+    },
+    {
+      "label": "Rare terminology",
+      "text": "Thrombocytopenia and cardiomyopathy require further evaluation.",
+      "medical": {
+        "tokens": [
+          "Th",
+          "romb",
+          "ocyt",
+          "openia",
+          "\u0120and",
+          "\u0120cardiomyopathy",
+          "\u0120require",
+          "\u0120further",
+          "\u0120evaluation",
+          "."
+        ],
+        "ids": [
+          2051,
+          12870,
+          2319,
+          7132,
+          292,
+          11929,
+          2933,
+          1857,
+          2217,
+          15
+        ],
+        "decoded": "Thrombocytopenia and cardiomyopathy require further evaluation."
+      },
+      "general": {
+        "tokens": [
+          "Th",
+          "rom",
+          "b",
+          "ocy",
+          "t",
+          "op",
+          "en",
+          "ia",
+          "\u0120and",
+          "\u0120card",
+          "i",
+          "omy",
+          "op",
+          "athy",
+          "\u0120require",
+          "\u0120further",
+          "\u0120eval",
+          "uation",
+          "."
+        ],
+        "ids": [
+          3694,
+          387,
+          67,
+          10087,
+          85,
+          406,
+          275,
+          483,
+          290,
+          6586,
+          74,
+          5295,
+          406,
+          9611,
+          4478,
+          1650,
+          9819,
+          2752,
+          15
+        ],
+        "decoded": "Thrombocytopenia and cardiomyopathy require further evaluation."
+      }
+    },
+    {
+      "label": "Case, units, and Unicode",
+      "text": "BRCA1: 5 mg, 37\u00b0C, \u03b2-blocker.",
+      "medical": {
+        "tokens": [
+          "BR",
+          "CA",
+          "1",
+          ":",
+          "\u01205",
+          "\u0120mg",
+          ",",
+          "\u012037",
+          "\u00c2",
+          "\u00b0",
+          "C",
+          ",",
+          "\u0120",
+          "\u00ce",
+          "\u00b2",
+          "-",
+          "block",
+          "er",
+          "."
+        ],
+        "ids": [
+          15979,
+          3660,
+          18,
+          27,
+          535,
+          1075,
+          13,
+          3036,
+          128,
+          110,
+          36,
+          13,
+          222,
+          140,
+          112,
+          14,
+          12462,
+          288,
+          15
+        ],
+        "decoded": "BRCA1: 5 mg, 37\u00b0C, \u03b2-blocker."
+      },
+      "general": {
+        "tokens": [
+          "B",
+          "R",
+          "CA",
+          "1",
+          ":",
+          "\u01205",
+          "\u0120m",
+          "g",
+          ",",
+          "\u012037",
+          "\u00c2",
+          "\u00b0",
+          "C",
+          ",",
+          "\u0120\u00ce",
+          "\u00b2",
+          "-",
+          "bl",
+          "ock",
+          "er",
+          "."
+        ],
+        "ids": [
+          35,
+          51,
+          9214,
+          18,
+          27,
+          567,
+          294,
+          72,
+          13,
+          3436,
+          128,
+          110,
+          36,
+          13,
+          5166,
+          112,
+          14,
+          6612,
+          816,
+          263,
+          15
+        ],
+        "decoded": "BRCA1: 5 mg, 37\u00b0C, \u03b2-blocker."
+      }
+    },
+    {
+      "label": "General-language control",
+      "text": "The train arrived early and we walked to the coffee shop.",
+      "medical": {
+        "tokens": [
+          "The",
+          "\u0120train",
+          "\u0120ar",
+          "rived",
+          "\u0120early",
+          "\u0120and",
+          "\u0120we",
+          "\u0120w",
+          "al",
+          "ked",
+          "\u0120to",
+          "\u0120the",
+          "\u0120co",
+          "ffe",
+          "e",
+          "\u0120sh",
+          "op",
+          "."
+        ],
+        "ids": [
+          520,
+          3027,
+          638,
+          13884,
+          1546,
+          292,
+          637,
+          275,
+          273,
+          982,
+          302,
+          267,
+          537,
+          7148,
+          70,
+          449,
+          376,
+          15
+        ],
+        "decoded": "The train arrived early and we walked to the coffee shop."
+      },
+      "general": {
+        "tokens": [
+          "The",
+          "\u0120train",
+          "\u0120arrived",
+          "\u0120early",
+          "\u0120and",
+          "\u0120we",
+          "\u0120walked",
+          "\u0120to",
+          "\u0120the",
+          "\u0120coffee",
+          "\u0120shop",
+          "."
+        ],
+        "ids": [
+          570,
+          4582,
+          2777,
+          1069,
+          290,
+          656,
+          13170,
+          291,
+          262,
+          14047,
+          6333,
+          15
+        ],
+        "decoded": "The train arrived early and we walked to the coffee shop."
+      }
+    }
+  ]
+};

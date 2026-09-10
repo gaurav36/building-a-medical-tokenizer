@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Build your own medical-domain tokenizer: a practical guide to corpus design, byte-level BPE, honest evaluation, and model compatibility, grounded in medtok.">
+  <title>Building a Medical Tokenizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <script defer src="js/source.js"></script>
+  <script defer src="js/metrics.js"></script>
+  <script defer src="js/examples.js"></script>
+  <script defer src="js/main.js"></script>
+</head>
+<body>
+  <a class="skip" href="#overview">Skip to article</a>
+  <a class="github-top-right" href="https://github.com/gaurav36/building-a-medical-tokenizer" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository" title="Open GitHub repository">
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.62 7.62 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path></svg>
+    <span>GitHub Repo</span>
+  </a>
+  <aside class="sidebar">
+    <a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true">m<span>t</span></span><span>Building a <br>Medical Tokenizer</span></a>
+    <p class="eyebrow">Engineering notes / 02</p>
+    <nav aria-label="Article contents">
+      <ol>
+        <li><a href="#overview" aria-current="location"><span>01</span> The starting point</a></li>
+        <li><a href="#corpus"><span>02</span> Build the corpus</a></li>
+        <li><a href="#split"><span>03</span> Split before training</a></li>
+        <li><a href="#pipeline"><span>04</span> Inside the tokenizer</a></li>
+        <li><a href="#train"><span>05</span> Train your BPE</a></li>
+        <li><a href="#inspect"><span>06</span> Inspect real tokens</a></li>
+        <li><a href="#evaluate"><span>07</span> Make it a fair test</a></li>
+        <li><a href="#vocabulary"><span>08</span> Choose a vocabulary</a></li>
+        <li><a href="#export"><span>09</span> Save &amp; reload</a></li>
+        <li><a href="#compatibility"><span>10</span> The model boundary</a></li>
+        <li><a href="#checklist"><span>11</span> Before you publish</a></li>
+        <li><a href="#papers"><span>12</span> Interesting papers</a></li>
+        <li><a href="#references"><span>13</span> Code &amp; references</a></li>
+      </ol>
+    </nav>
+    <div class="sidebar-footer"><span class="status-dot"></span> Companion to <strong>medtok</strong><p>From raw text to a vocabulary<br>you can explain and evaluate.</p><a href="diagrams/index.html">Visual reference &rarr;</a><p class="basics-link"><span>Start with tokenization basics</span><a href="https://gaurav36.github.io/tokenization-explanation/">Tokenization Deep Dive <span aria-hidden="true">&nearr;</span></a></p></div>
+  </aside>
+  <main>
+    <div class="topline"><span>FIELD NOTES / NLP ENGINEERING</span><a href="#references">Implementation &amp; sources &nearr;</a></div>
+    <article>
+      <header id="overview" class="article-header">
+        <p class="eyebrow"><span class="section-number">01</span> The starting point</p>
+        <h1>Building a Medical Tokenizer</h1>
+        <p class="subtitle">Build a vocabulary that knows your domain.</p>
+        <p class="lede">A general tokenizer can read <em>cardiomyopathy</em>. A domain tokenizer can learn to spend fewer pieces on it. The interesting part is building one, then proving what actually changed.</p>
+        <div class="article-meta"><span>Byte-level BPE</span><span>Python + Hugging Face</span><span>13 lessons / 2 labs</span></div>
+        <p>These notes follow <strong>medtok</strong>, the practical project currently named <code>tokenization-explainer</code>. You will prepare medical text, learn a vocabulary from scratch with Hugging Face <code>tokenizers</code>, compare it with a general-text control, and save a reusable artifact. The BPE engine comes from the library; the corpus, training recipe, and learned vocabulary are yours.</p>
+        <div class="takeaway"><strong>The question to answer</strong><p>At the same vocabulary budget, does training on medical text reduce token counts on unseen medical documents, and what does it cost on general text?</p></div>
+        <div class="reading-route"><a href="#corpus"><small>PREPARE</small>Corpus &amp; boundaries <span aria-hidden="true">&rarr;</span></a><a href="#train"><small>BUILD</small>Train &amp; inspect <span aria-hidden="true">&rarr;</span></a><a href="#evaluate"><small>VERIFY</small>Measure &amp; export <span aria-hidden="true">&rarr;</span></a></div>
+      </header>
+
+      <section id="corpus">
+        <p class="eyebrow"><span class="section-number">02</span> Data comes first</p><h2>Your corpus is the design decision.</h2>
+        <p>BPE learns recurring adjacent pieces, not medical definitions. If <code>troponin</code> occurs often enough, its fragments may merge. A term that is absent, rare, or written in several inconsistent ways may remain fragmented.</p>
+        <p>The medtok training path uses <strong>PubMed abstracts</strong>. That is biomedical research prose, not a representative sample of discharge summaries, prescriptions, or conversations. Choose your corpus to match the language you actually expect to process.</p>
+        <h3>Start with a data contract</h3>
+        <ul class="prose-list"><li>UTF-8 text, one document per line, or JSONL with a non-empty string <code>text</code> field.</li><li>Keep a record of source, license, download date, filtering rules, and document identifiers.</li><li>Check duplicates, boilerplate, language balance, and unusually short or long documents.</li><li>Preserve meaningful case, punctuation, units, and symbols. <code>BRCA1</code>, <code>5 mg</code>, and <code>5 &micro;g</code> are not interchangeable strings.</li></ul>
+        <pre><code>{"text": "An authored example about myocardial infarction."}
+{"text": "An authored example about blood glucose measurement."}</code></pre>
+        <p class="caption">Illustrative JSONL records, not patient data. The source reader strips surrounding whitespace and skips blank lines; malformed JSON may fall back to raw text. Validate JSONL before training rather than relying on that permissive fallback.</p>
+        <div class="callout warning"><strong>Medical text is not automatically safe to publish.</strong><p>Do not put patient identifiers, private notes, or restricted datasets into a public repository. Verify access rights and de-identification requirements. A tokenizer vocabulary is not a privacy guarantee.</p></div>
+        <h3>Download the experiment's two domains</h3>
+        <p>Run every shell command below from the implementation repository, currently <code>tokenization-explainer</code>, later <code>medtok</code>. First install its environment with <code>uv sync</code>. Downloads need internet access.</p>
+        <pre><code>uv sync
+uv run python scripts/download_pubmed_sample.py --max-docs 50000
+uv run python scripts/download_general_sample.py</code></pre>
+        <p>The general-text script prepares WikiText training and held-out files. Use the same trainer for both domains so that algorithm and vocabulary target stay fixed.</p>
+      </section>
+
+      <section id="split">
+        <p class="eyebrow"><span class="section-number">03</span> Protect the experiment</p><h2>Split before the vocabulary learns.</h2>
+        <p>A tokenizer can overfit too. Evaluating the exact documents that supplied its frequent pairs gives an optimistic view of compression. Freeze your splits before training.</p>
+        <pre><code>uv run python scripts/split_corpus.py --heldout-n 5000 --seed 42</code></pre>
+        <div class="split-diagram" role="img" aria-label="50,000 PubMed rows are shuffled with seed 42, then split into 45,000 training rows and 5,000 held-out rows."><div><strong>50,000</strong><span>PubMed rows</span></div><span class="connector" aria-hidden="true">&rarr;</span><div class="train-split"><strong>45,000</strong><span>Train / learn merges</span></div><div class="test-split"><strong>5,000</strong><span>Held out / evaluate</span></div></div>
+        <p class="caption">Counts assume the source file contains exactly 50,000 rows. The script reserves at most 5,000 rows; a smaller corpus can leave no training rows.</p>
+        <p>The script shuffles <em>line records</em> with seed 42. It does not deduplicate abstracts, group related documents, or ensure a time-based holdout. Different rows can contain identical text. Deduplicate before splitting and verify content overlap, not just row indices.</p>
+        <div class="takeaway"><strong>For vocabulary tuning, use three sets.</strong><p>Train learns merges. Validation selects vocabulary size and preprocessing. Test is opened once for the final report. The basic medtok walkthrough has a train/held-out split; create a separate validation file before tuning.</p></div>
+      </section>
+
+      <section id="pipeline">
+        <p class="eyebrow"><span class="section-number">04</span> A tokenizer is a pipeline</p><h2>Bytes in. Learned pieces out.</h2>
+        <p>There are two different operations: <strong>training</strong> discovers merge rules and token IDs; <strong>encoding</strong> applies the saved rules to new text. Encoding does not learn a new vocabulary for each sentence.</p>
+        <ol class="pipeline"><li><span>01 / INPUT</span><strong>Preserve the text</strong><p>No tokenizer normalizer is configured. The training-file reader still strips outer whitespace.</p></li><li><span>02 / BOUNDARIES</span><strong>ByteLevel pre-tokenizer</strong><p>Split with the library's byte-level pre-tokenizer. Do not add a leading space.</p></li><li><span>03 / LEARNING</span><strong>BPE vocabulary + merges</strong><p>Start with byte symbols. Merge frequent adjacent pairs within pre-tokenized chunks.</p></li><li><span>04 / OUTPUT</span><strong>IDs and reversible decoding</strong><p>Map pieces to IDs. Decode the complete sequence back to text with the byte-level decoder.</p></li></ol>
+        <h3>What one merge does</h3>
+        <p>In a deliberately simplified corpus, suppose <code>cardio</code> and <code>myopathy</code> are already pieces and their adjacent pair is the most frequent eligible pair. BPE adds <code>cardiomyopathy</code> and records that merge. Repeating this process builds a ranked list of merges. This is a schematic explanation, not a trace of medtok's learned merge order.</p>
+        <p>The initial alphabet includes all <strong>256 byte values</strong>. That provides coverage for arbitrary valid UTF-8 text without needing a medical dictionary. It does not mean every character is one token: non-ASCII characters span multiple bytes, and learned merges may combine or split their byte representations.</p>
+        <p><code>&#288;</code> in a raw piece is the byte-level representation commonly used for a space. It is not an extra letter in the patient's text. Decode the IDs rather than joining the displayed pieces. <a href="diagrams/index.html#byte-pipeline">See the pipeline reference &rarr;</a></p>
+      </section>
+
+      <section id="train">
+        <p class="eyebrow"><span class="section-number">05</span> The actual training recipe</p><h2>Train your medical BPE.</h2>
+        <p>The core configuration below follows <a data-source="scripts/train_medical_tokenizer.py" href="https://github.com/gaurav36/med-tok/blob/main/scripts/train_medical_tokenizer.py">the medtok trainer</a>. The library implements BPE; you do not need to implement its merge-counting engine yourself.</p>
+        <pre><code class="language-python">from tokenizers import Tokenizer, decoders, models
+from tokenizers import pre_tokenizers, processors, trainers
+
+tokenizer = Tokenizer(models.BPE())
+tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+tokenizer.decoder = decoders.ByteLevel()
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=True)
+
+trainer = trainers.BpeTrainer(
+    vocab_size=16000,
+    min_frequency=2,
+    special_tokens=["&lt;|endoftext|&gt;", "&lt;pad&gt;"],
+    initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+)</code></pre>
+        <p><code>vocab_size</code> is a target, including the initial alphabet and special tokens. A small corpus or frequency cutoff can stop training before that target. <code>min_frequency=2</code> is the minimum pair frequency for a merge, not a guarantee that every final token appears twice in encoded documents.</p>
+        <p><code>trim_offsets=True</code> adjusts span offsets associated with byte-level pieces; it does not delete spaces from decoded text. Registering EOS and padding tokens allocates IDs, but does not by itself append EOS to each sequence.</p>
+        <pre><code>uv run python scripts/train_medical_tokenizer.py --corpus data/pubmed_train.jsonl --out artifacts/medical-bpe-pubmed/tokenizer.json --vocab-size 16000 --min-frequency 2
+
+uv run python scripts/train_medical_tokenizer.py --corpus data/general_train.jsonl --out artifacts/general-bpe/tokenizer.json --vocab-size 16000 --min-frequency 2</code></pre>
+        <p>The trainer streams batches of non-empty documents through <code>train_from_iterator</code>, creates the output directory, and writes a serialized <code>tokenizer.json</code>. Record the <em>actual</em> vocabulary size printed at the end of each run.</p>
+        <details><summary>A smaller first run</summary><p>The implementation also includes an authored corpus and a tiny fallback artifact. Run the default trainer for a quick local smoke test:</p><pre><code>uv run python scripts/train_medical_tokenizer.py</code></pre><p>This writes <code>artifacts/medical-bpe/tokenizer.json</code>, a different path from the PubMed-trained artifact. Do not label its results as full PubMed evaluation.</p></details>
+      </section>
+
+      <section id="inspect">
+        <p class="eyebrow"><span class="section-number">06</span> Lab / token inspection</p><h2>Same sentence. Different vocabulary.</h2>
+        <p>These are real encodings from the two local 16k artifacts, exported using Hugging Face <code>tokenizers</code>. The sentences are synthetic illustration probes, not a held-out benchmark. The browser displays saved outputs; it does not train or run a tokenizer.</p>
+        <div class="lab" id="inspection-lab">
+          <div class="lab-toolbar"><label for="sample">Text sample</label><select id="sample"><option value="0">Medication</option><option value="1" selected>Cardiology</option><option value="2">Rare terminology</option><option value="3">Case, units, and Unicode</option><option value="4">General-language control</option></select><label class="checkbox-label"><input type="checkbox" id="show-ids"> Token IDs</label></div>
+          <blockquote id="sample-text">Myocardial infarction was associated with elevated troponin.</blockquote>
+          <div class="token-row"><div class="token-label"><strong>Medical BPE</strong><span>PubMed / 16,000 vocab</span></div><div id="medical-tokens" class="tokens"></div><output id="medical-count" class="token-count"></output></div>
+          <div class="token-row general"><div class="token-label"><strong>General BPE</strong><span>WikiText / 16,000 vocab</span></div><div id="general-tokens" class="tokens"></div><output id="general-count" class="token-count"></output></div>
+          <div class="lab-results" aria-live="polite" aria-atomic="true"><p id="comparison"></p><p id="roundtrip"></p></div>
+          <noscript><p>Enable JavaScript for sample selection. In this cardiology example, medical BPE produces 9 tokens and general BPE produces 16. The figure below provides a static comparison.</p></noscript>
+        </div>
+        <p class="caption">Raw byte-level pieces are shown exactly as exported, including space markers. A piece can contain only part of a Unicode character's bytes. Both complete ID sequences decode exactly to the input.</p>
+        <figure><img src="assets/probe-counts.png" alt="Token counts for five synthetic probes. Medical versus general: medication 12 versus 15; cardiology 9 versus 16; rare terminology 10 versus 19; case and Unicode 19 versus 21; general language 18 versus 12." width="1100" height="470" loading="lazy"><figcaption>Measured probe counts, not benchmark averages. The general-language example exposes the tradeoff.</figcaption></figure>
+        <details><summary>Artifact provenance</summary><div id="provenance"></div><p>Inputs live in <a href="https://github.com/gaurav36/building-a-medical-tokenizer/blob/main/data/examples.json">the synthetic example file</a>. The exporter records each artifact's SHA-256, library version, vocabulary size, IDs, pieces, and decoded text. No patient records are embedded.</p></details>
+
+        <h3 id="colab-playbook">Colab playbook: medical 16k, medical 32k, and GPT-5</h3>
+        <p>The project's <a href="https://colab.research.google.com/drive/171axehMMfnunm1UVjT2EIi212YHbhOKo?usp=sharing">custom medical tokenization playbook on Google Colab</a> compares the published 16k and 32k tokenizers on the same text. The implementation repository used to build the custom medical tokenizer is <a href="https://github.com/gaurav36/med-tok">gaurav36/med-tok on GitHub</a>. The repository contains the implementation; the Hugging Face repositories below supply the tokenizer artifacts loaded by these examples.</p>
+        <p class="caption">The outputs below were supplied by the project author from the Colab playbook. They are separate from the saved local-artifact lab above, and have not been independently rerun here. At the time of this update, Colab redirected to sign-in and the GitHub URL returned 404 from the documentation environment; access or sharing settings may need checking. The Hub names identify the reported 16k/32k variants, not independently verified artifact sizes or revisions.</p>
+        <h4>Load a trained tokenizer, then apply it to new text</h4>
+        <p><code>PreTrainedTokenizerFast</code> provides the Transformers interface to a fast tokenizer backed by the <code>tokenizers</code> library. <code>from_pretrained()</code> loads its saved vocabulary, merge rules, and configuration from the Hub or a local cache. <strong>It does not train the tokenizer again or load a language model.</strong> In Colab, install the dependency if needed:</p>
+        <pre><code>%pip install transformers</code></pre>
+        <p>Use distinct variable names for the two artifacts. That keeps the comparison explicit even when notebook cells run out of order.</p>
+        <pre><code class="language-python">from transformers import PreTrainedTokenizerFast
+
+      medical_16k = PreTrainedTokenizerFast.from_pretrained(
+          "gaurav36/medical-bpe-16k"
+      )
+      medical_32k = PreTrainedTokenizerFast.from_pretrained(
+          "gaurav36/medical-bpe-32k"
+      )
+      text = "Acetylcholinesterase inhibitors are used in Alzheimer's disease treatment."
+
+      print(medical_16k.tokenize(text))
+      print(medical_32k.tokenize(text))</code></pre>
+        <p>The published artifacts are <a href="https://huggingface.co/gaurav36/medical-bpe-16k">medical-bpe-16k</a> and <a href="https://huggingface.co/gaurav36/medical-bpe-32k">medical-bpe-32k</a>. Loading uncached files requires internet access and permission to access the repositories. The sentence is an illustrative tokenization input, not treatment guidance.</p>
+        <p><strong>Reported medical 16k output: 15 pieces</strong></p>
+        <pre><code id="colab-16k-pieces">["A", "cetyl", "cholinesterase", "&#288;inhibitors", "&#288;are", "&#288;used", "&#288;in", "&#288;Al", "z", "he", "imer", "'s", "&#288;disease", "&#288;treatment", "."]</code></pre>
+        <p><strong>Reported medical 32k output: 11 pieces</strong></p>
+        <pre><code id="colab-32k-pieces">["Acetyl", "cholinesterase", "&#288;inhibitors", "&#288;are", "&#288;used", "&#288;in", "&#288;Alzheimer", "'s", "&#288;disease", "&#288;treatment", "."]</code></pre>
+        <h4>Compare with the encoding selected for GPT-5</h4>
+        <p>Use <code>tiktoken.encoding_for_model("gpt-5")</code> to select GPT-5's text encoding according to the installed tiktoken version. This loads encoding data, not GPT-5 weights, and does not call the OpenAI API or require an API key. Initial installation and uncached encoding downloads need internet access. This is an external tokenizer baseline, not a same-recipe general BPE control.</p>
+        <pre><code>%pip install -U tiktoken</code></pre>
+        <pre><code class="language-python">import tiktoken
+
+gpt5_encoding = tiktoken.encoding_for_model("gpt-5")
+text = "Acetylcholinesterase inhibitors are used in Alzheimer's disease treatment."
+gpt5_ids = gpt5_encoding.encode(text)
+
+print("Encoding:", gpt5_encoding.name)
+print("Token IDs:")
+print(gpt5_ids)
+
+gpt5_pieces = [
+    gpt5_encoding.decode_single_token_bytes(token_id).decode(
+        "utf-8", errors="replace"
+    )
+    for token_id in gpt5_ids
+]
+print("\nTokens:")
+print(gpt5_pieces)
+print("Token count:", len(gpt5_ids))
+assert gpt5_encoding.decode(gpt5_ids) == text</code></pre>
+        <p>The variable <code>gpt5_ids</code> holds integers; <code>gpt5_pieces</code> is a readable byte-decoded view. Spaces in this view appear as actual spaces, such as <code>" inhibitors"</code>, rather than the Hugging Face raw-piece marker <code>&#288;</code>. For other inputs, individual tokens can split a UTF-8 character: <code>errors="replace"</code> can then produce replacement characters in this diagnostic view. Decode the complete ID sequence to check reconstruction, as shown above.</p>
+        <p class="caption"><strong>GPT-5 output pending verification.</strong> The supplied result repeats the medical-16k list, including its <code>&#288;</code> markers, so it is not attributed to this tiktoken cell. Run this cell in the linked Colab to obtain the actual encoding name, IDs, pieces, and count. If the installed version does not recognize <code>gpt-5</code>, upgrade tiktoken and restart the notebook runtime before retrying; do not silently substitute a different model.</p>
+        <h4>Where do the differences come from?</h4>
+        <div class="table-scroll"><table><caption>Piece counts from the supplied Colab outputs, not benchmark averages</caption><thead><tr><th scope="col">Tokenizer</th><th scope="col">Acetylcholinesterase</th><th scope="col">Alzheimer's</th><th scope="col">Whole sentence</th></tr></thead><tbody>
+          <tr><th scope="row">Medical 16k</th><td>3 pieces</td><td>5 pieces</td><td>15 pieces</td></tr>
+          <tr><th scope="row">Medical 32k</th><td>2 pieces</td><td>2 pieces</td><td>11 pieces</td></tr>
+          <tr><th scope="row">GPT-5 via tiktoken</th><td>Not verified</td><td>Not verified</td><td>Run the cell above</td></tr>
+        </tbody></table></div>
+        <p>For <code>Acetylcholinesterase</code>, the medical 16k tokenizer uses <code>A | cetyl | cholinesterase</code>, and medical 32k uses <code>Acetyl | cholinesterase</code>. The 32k output saves one piece on this word relative to 16k. Neither custom tokenizer makes the entire word a single token in this sentence.</p>
+        <p>The remaining three pieces saved by 32k come from <code>Alzheimer's</code>: <code>&#288;Al | z | he | imer | 's</code> becomes <code>&#288;Alzheimer | 's</code>. Inspect the GPT-5 cell's output separately before comparing those boundaries.</p>
+        <p>Across this sentence, 32k uses <strong>26.7% fewer pieces than 16k</strong>, calculated as <code>(15 - 11) / 15 &times; 100</code>. A percentage relative to GPT-5 requires its verified count; the earlier GPT-2 count cannot be transferred to GPT-5. This single example does not isolate vocabulary size from training differences or demonstrate improved medical reasoning, latency, or overall model quality.</p>
+        <h4>What does the space marker mean?</h4>
+        <p><code>&#288;</code> is the visible byte-level representation used for a space in these token strings. For example, <code>&#288;inhibitors</code> represents a piece that includes the preceding space. It is not a literal extra letter in the input. Case and leading spaces affect segmentation: changing <code>Acetylcholinesterase</code> to lowercase or placing it after a space can change the pieces. Keep input strings identical when comparing tokenizers.</p>
+        <h4>From pieces to IDs, and back</h4>
+        <p>For the Hugging Face medical tokenizers, <code>tokenize()</code> exposes the pieces; calling the tokenizer returns an encoding with <code>input_ids</code> and auxiliary fields such as an attention mask. Each ID is an index in that tokenizer's vocabulary, not a medical concept number or a score. The supplied list of 15 IDs corresponds to the <strong>16k output</strong>. Use the 16k variable explicitly instead of a reused <code>tok</code> that might now refer to the 32k tokenizer or a tiktoken encoding.</p>
+        <pre><code class="language-python">encoding = medical_16k(text, add_special_tokens=False)
+      print(encoding["input_ids"])
+      print(medical_16k.convert_ids_to_tokens(encoding["input_ids"]))</code></pre>
+        <p><strong>Reported 16k IDs and their pieces:</strong> the snippet makes special-token exclusion explicit to compare text pieces consistently. The original supplied cell used <code>tok(text)</code>; automatic special-token behavior depends on the loaded configuration.</p>
+        <pre><code id="colab-16k-ids">[34, 9986, 9670, 3517, 408, 907, 272, 1747, 91, 261, 13426, 727, 816, 713, 15]</code></pre>
+        <pre><code>["A", "cetyl", "cholinesterase", "&#288;inhibitors", "&#288;are", "&#288;used", "&#288;in", "&#288;Al", "z", "he", "imer", "'s", "&#288;disease", "&#288;treatment", "."]</code></pre>
+        <p>In this reported 16k mapping, ID <code>34</code> maps to <code>A</code>, <code>9986</code> to <code>cetyl</code>, and <code>9670</code> to <code>cholinesterase</code>. Another tokenizer can assign completely different pieces to the same integers. No verified 32k or GPT-5 IDs were supplied here, so these medical-16k IDs must not be reused with either of those tokenizers.</p>
+        <p><code>convert_ids_to_tokens()</code> gives the raw piece representations, including space markers. To reconstruct readable text, use the matching tokenizer's decoder. This is a check to run in the notebook, not an independently executed result:</p>
+        <pre><code class="language-python">decoded = medical_16k.decode(
+          encoding["input_ids"],
+          skip_special_tokens=False,
+          clean_up_tokenization_spaces=False,
+      )
+      print(decoded)
+      assert decoded == text</code></pre>
+        <p>For a reproducible comparison, record <code>len(medical_16k)</code> and <code>len(medical_32k)</code> to inspect loaded vocabulary sizes including added tokens. Record <code>gpt5_encoding.name</code>, the tiktoken version, and the Transformers version. Pin each Hub load with an actual commit hash using <code>revision=...</code>. Repository names and unpinned default revisions alone do not freeze an experiment. Encoding this plain sentence does not count the complete overhead of a GPT-5 API conversation, tools, or other request content.</p>
+        <div class="takeaway"><strong>What this playbook demonstrates</strong><p>The supplied medical example gives 15 pieces with 16k and 11 with 32k; the GPT-5 cell provides a separate comparison to run and record. Loading and encoding apply existing rules, not training. A local tokenizer comparison does not modify GPT-5 or establish its clinical capabilities. See the <a href="#compatibility">model compatibility boundary</a> before using a custom vocabulary with pretrained weights.</p></div>
+      </section>
+
+      <section id="evaluate">
+        <p class="eyebrow"><span class="section-number">07</span> Evidence, not anecdotes</p><h2>Make it a fair test.</h2>
+        <p>The most informative control is not a tokenizer with a much larger vocabulary. It is the <strong>same byte-level BPE recipe and same vocabulary target, trained on general text</strong>. Even then, corpus quality, size in bytes, document length, and duplication can confound the result. Equal document counts do not imply equal training budgets.</p>
+        <div class="table-scroll"><table><caption>Run every tokenizer on both evaluation domains</caption><thead><tr><th>Tokenizer</th><th>Vocabulary</th><th>Medical test</th><th>General test</th></tr></thead><tbody><tr><td>Custom medical BPE</td><td>16k target</td><td>Domain efficiency</td><td>Out-of-domain cost</td></tr><tr><td>General BPE control</td><td>16k target</td><td>Matched control</td><td>General efficiency</td></tr><tr><td><code>cl100k_base</code></td><td>About 100k</td><td>External baseline</td><td>External baseline</td></tr><tr><td><code>o200k_base</code></td><td>About 200k</td><td>External baseline</td><td>External baseline</td></tr></tbody></table></div>
+        <p>Only your own train/test separation can be audited here. You cannot establish that public PubMed or WikiText documents were absent from the external tokenizers' training data. Call them baselines, not controlled unseen-data experiments.</p>
+        <h3>Use a metric with an explicit denominator</h3>
+        <div class="formula"><span>Fertility</span><strong>total tokens / total whitespace words</strong></div>
+        <p>The medtok comparator sums counts across documents before dividing. It is not the unweighted mean of per-document ratios. Whitespace words are a convenient denominator, not medical concepts or a language-independent measure.</p>
+        <ul class="prose-list"><li><strong>Tokens per 100 characters:</strong> useful alongside fertility, with Python Unicode code-point counts.</li><li><strong>Average tokens per document:</strong> a direct view of sequence length on an unchanged evaluation set.</li><li><strong>Single-token term rate:</strong> useful for inspection, but curated terms and leading-space choices can change the result.</li><li><strong>Round-trip checks:</strong> verify reconstruction of spaces, case, numbers, punctuation, and non-ASCII text.</li></ul>
+        <pre><code>uv run python scripts/compare_tokenizers.py --no-qwen --tokenizer-json artifacts/medical-bpe-pubmed/tokenizer.json --general-bpe artifacts/general-bpe/tokenizer.json --heldout-medical data/pubmed_heldout.jsonl --heldout-general data/general_heldout.jsonl</code></pre>
+        <p><code>--no-qwen</code> omits the optional Qwen baseline, not the tiktoken baselines. Their encoding assets may need network access on first use. Confirm that the report includes both BPE artifacts and both held-out sets: the source command can warn and skip missing optional inputs.</p>
+        <div class="callout warning"><strong>Fewer tokens is not better medicine.</strong><p>Lower fertility measures token efficiency on this sample. It does not demonstrate clinical accuracy, safer generation, better reasoning, or lower end-to-end latency. Measure downstream quality and performance separately. A general-domain loss can illustrate specialization, but it is not a required proof of it.</p></div>
+
+        <h3 id="run-32k">Reading a custom medical tokenizer's 32k run</h3>
+        <p>This run asks a concrete question: <strong>can a vocabulary trained on biomedical text represent PubMed abstracts more compactly, and what happens on general English?</strong> The results below are transcribed from the terminal output supplied by the project author, who identified the custom medical tokenizer as a <strong>32k vocabulary</strong>. They are a separate experiment from the saved <strong>16k</strong> encodings in the inspection lab above; those encodings have not been replaced.</p>
+        <p>A 32k vocabulary is a budget of roughly 32,000 token entries, not a dictionary of 32,000 medical terms. In byte-level BPE, that budget includes byte symbols, learned fragments, longer pieces, and special tokens. Training on PubMed makes repeated biomedical sequences candidates for merges; it does not teach a model what the terms mean. More vocabulary entries can help represent frequent terms compactly, but this run alone does not show that 32k is optimal or better than 16k.</p>
+        <h4>The command and what it loads</h4>
+        <p>The supplied command was run from the implementation checkout named <code>med-tok</code>, not from this blog folder:</p>
+        <pre><code>uv run python scripts/compare_tokenizers.py --heldout-medical data/pubmed_heldout.jsonl --heldout-general data/general_heldout.jsonl --general-bpe artifacts/general-bpe/tokenizer.json</code></pre>
+        <p>This command evaluates existing tokenizers; it does not train a 32k vocabulary. The output identifies <code>artifacts/medical-bpe-pubmed/tokenizer.json</code> as the selected <code>custom-med</code> artifact. The two <code>--heldout-*</code> options supply evaluation files, and <code>--general-bpe</code> supplies the general-text BPE control. <code>cl100k</code> and <code>o200k</code> are external tiktoken baselines; <code>qwen</code> is the Qwen tokenizer baseline reported by the script. These columns compare encodings, not the capabilities of the corresponding language models.</p>
+        <p class="caption">Provenance limit: this is a user-reported run, not an independently rerun benchmark. The pasted output does not print actual vocabulary sizes, artifact hashes, corpus hashes, library versions, or the exact Qwen identifier. In particular, the general BPE vocabulary size is not established here, so this must not be described as a verified equal-budget 32k comparison. The PyTorch warning means model loading is unavailable in that environment; tokenizer-only evaluation can still run, as these tables show.</p>
+        <h4>Read the three summary columns first</h4>
+        <ul class="prose-list"><li><strong>Fertility = total tokens / total whitespace words.</strong> A value of 1.312 means about 131.2 tokens per 100 whitespace-delimited words across that dataset. It is not an accuracy score or a claim that each word uses exactly that many pieces.</li><li><strong>tok/100ch = 100 &times; total tokens / total characters.</strong> This reports token density using character counts instead of word counts. The comparator uses Unicode code points, not UTF-8 bytes.</li><li><strong>Mean pieces = total tokens / number of inputs.</strong> An input is a short probe in the illustrative tables and a document in the held-out tables. Comparing those means across different datasets does not measure improvement because the texts differ.</li></ul>
+        <p>For the same non-empty evaluation set, the denominators are fixed across tokenizers, so all three columns describe the same total-token differences from different perspectives. They are not three independent demonstrations of model quality.</p>
+        <h4>1. Probe piece counts: inspect individual successes and exceptions</h4>
+        <div class="table-scroll"><table><caption>Reported token counts for 20 illustrative medical probes</caption><thead><tr><th scope="col">Probe</th><th scope="col">cl100k</th><th scope="col">o200k</th><th scope="col">custom-med</th><th scope="col">general-bpe</th><th scope="col">qwen</th></tr></thead><tbody>
+          <tr><th scope="row">empagliflozin 10 mg daily</th><td>10</td><td>9</td><td>9</td><td>10</td><td>11</td></tr>
+          <tr><th scope="row">acetylcholinesterase inhibitor</th><td>7</td><td>6</td><td>3</td><td>10</td><td>7</td></tr>
+          <tr><th scope="row">BRCA1 pathogenic variant</th><td>6</td><td>5</td><td>5</td><td>7</td><td>6</td></tr>
+          <tr><th scope="row">ICD-10-CM E11.65</th><td>10</td><td>10</td><td>10</td><td>12</td><td>13</td></tr>
+          <tr><th scope="row">serum creatinine 1.4 mg/dL</th><td>11</td><td>11</td><td>8</td><td>12</td><td>11</td></tr>
+          <tr><th scope="row">&beta;-lactam allergy</th><td>5</td><td>5</td><td>5</td><td>8</td><td>5</td></tr>
+          <tr><th scope="row">community-acquired pneumonia</th><td>4</td><td>4</td><td>6</td><td>7</td><td>4</td></tr>
+          <tr><th scope="row">left lower lobe consolidation</th><td>5</td><td>5</td><td>4</td><td>5</td><td>5</td></tr>
+          <tr><th scope="row">Na&iuml;ve CD4+ T cells</th><td>8</td><td>8</td><td>8</td><td>9</td><td>8</td></tr>
+          <tr><th scope="row">COVID-19 mRNA vaccine</th><td>5</td><td>6</td><td>7</td><td>7</td><td>6</td></tr>
+          <tr><th scope="row">metformin 1000 mg twice daily</th><td>9</td><td>8</td><td>6</td><td>7</td><td>11</td></tr>
+          <tr><th scope="row">hemoglobin A1c 8.2%</th><td>10</td><td>10</td><td>8</td><td>12</td><td>10</td></tr>
+          <tr><th scope="row">troponin I elevated</th><td>5</td><td>5</td><td>4</td><td>6</td><td>5</td></tr>
+          <tr><th scope="row">NT-proBNP 4200 pg/mL</th><td>9</td><td>10</td><td>10</td><td>13</td><td>11</td></tr>
+          <tr><th scope="row">levothyroxine 75 &mu;g daily</th><td>10</td><td>9</td><td>10</td><td>9</td><td>11</td></tr>
+          <tr><th scope="row">vancomycin trough 18 &mu;g/mL</th><td>9</td><td>11</td><td>10</td><td>11</td><td>10</td></tr>
+          <tr><th scope="row">ST-elevation myocardial infarction</th><td>8</td><td>6</td><td>6</td><td>12</td><td>8</td></tr>
+          <tr><th scope="row">chronic kidney disease stage 4</th><td>7</td><td>7</td><td>5</td><td>6</td><td>7</td></tr>
+          <tr><th scope="row">HER2-negative breast cancer</th><td>5</td><td>5</td><td>7</td><td>9</td><td>5</td></tr>
+          <tr><th scope="row">oseltamivir 75 mg twice daily</th><td>10</td><td>9</td><td>9</td><td>9</td><td>11</td></tr>
+        </tbody></table></div>
+        <p>Each number counts pieces for the <em>whole input</em>. For <code>acetylcholinesterase inhibitor</code>, custom-med needs 3 pieces versus general BPE's 10: 70% fewer on this one phrase. The count alone does not reveal the boundaries or prove that <code>acetylcholinesterase</code> is one token. Inspect the actual pieces or IDs to find out.</p>
+        <p>Specialization is not a guarantee of winning every row. For <code>community-acquired pneumonia</code>, custom-med uses 6 pieces while cl100k, o200k, and qwen each use 4. The terminal's <code>tie</code> label means multiple tokenizers share the lowest count; it does not necessarily include custom-med, and it does not mean all counts are equal.</p>
+        <h4>2. Medical probe summary: the average of a small illustration set</h4>
+        <div class="table-scroll"><table><caption>Reported aggregate metrics for the 20 medical probes</caption><thead><tr><th scope="col">Tokenizer</th><th scope="col">Fertility</th><th scope="col">tok/100ch</th><th scope="col">Mean pieces</th></tr></thead><tbody>
+          <tr><th scope="row">cl100k</th><td>2.250</td><td>31.16</td><td>7.65</td></tr>
+          <tr><th scope="row">o200k</th><td>2.191</td><td>30.35</td><td>7.45</td></tr>
+          <tr><th scope="row">custom-med</th><td>2.059</td><td>28.51</td><td>7.00</td></tr>
+          <tr><th scope="row">general-bpe</th><td>2.662</td><td>36.86</td><td>9.05</td></tr>
+          <tr><th scope="row">qwen</th><td>2.426</td><td>33.60</td><td>8.25</td></tr>
+        </tbody></table></div>
+        <p>Custom-med averages 7.00 pieces per probe, compared with 9.05 for general BPE: approximately <strong>22.7% fewer tokens</strong>, using <code>(9.05 - 7.00) / 9.05 &times; 100</code>. Its fertility of 2.059 is consistent with many words still splitting. This table summarizes the examples above; it is not additional held-out evidence, and a curated set of 20 probes cannot represent all medical writing.</p>
+        <h4>3. General-English control: look outside the training domain</h4>
+        <div class="table-scroll"><table><caption>Reported metrics for the illustrative general-English control</caption><thead><tr><th scope="col">Tokenizer</th><th scope="col">Fertility</th><th scope="col">tok/100ch</th><th scope="col">Mean pieces</th></tr></thead><tbody>
+          <tr><th scope="row">cl100k</th><td>1.218</td><td>20.82</td><td>15.93</td></tr>
+          <tr><th scope="row">o200k</th><td>1.212</td><td>20.73</td><td>15.85</td></tr>
+          <tr><th scope="row">custom-med</th><td>1.486</td><td>25.40</td><td>19.43</td></tr>
+          <tr><th scope="row">general-bpe</th><td>1.315</td><td>22.49</td><td>17.20</td></tr>
+          <tr><th scope="row">qwen</th><td>1.218</td><td>20.82</td><td>15.93</td></tr>
+        </tbody></table></div>
+        <p>The direction reverses here: custom-med averages 19.43 pieces versus general BPE's 17.20, about <strong>13.0% more</strong>. A vocabulary selected from biomedical text can spend entries on pieces that are less useful in ordinary English. This is evidence of an out-of-domain token cost on these inputs, not evidence that general English cannot be encoded. These are illustrative control results; the separate 5,000-document general evaluation appears below.</p>
+        <h4>4. Single-token term rate: why 20% versus 0% matters</h4>
+        <div class="table-scroll"><table><caption>Reported single-token rate on the comparator's domain-term list</caption><thead><tr><th scope="col">Tokenizer</th><th scope="col">Single-token rate</th><th scope="col">Terms encoded as one piece</th></tr></thead><tbody>
+          <tr><th scope="row">cl100k</th><td>0.0%</td><td>0/20</td></tr>
+          <tr><th scope="row">o200k</th><td>0.0%</td><td>0/20</td></tr>
+          <tr><th scope="row">custom-med</th><td>20.0%</td><td>4/20</td></tr>
+          <tr><th scope="row">general-bpe</th><td>0.0%</td><td>0/20</td></tr>
+          <tr><th scope="row">qwen</th><td>0.0%</td><td>0/20</td></tr>
+        </tbody></table></div>
+        <div class="formula"><span>Single-token rate</span><strong>terms encoded as one piece / tested terms &times; 100</strong></div>
+        <p>Here, <code>4 / 20 &times; 100 = 20%</code>: four entries in the tested term list each became exactly one token with custom-med. None of those tested entries became one token with the other tokenizers under the same term-encoding procedure. <strong>0% does not mean 0% medical knowledge or failed encoding.</strong> A term represented by two or more valid subwords simply does not pass this particular one-piece test.</p>
+        <p>For intuition, imagine a term encoded as <code>[whole-term]</code> by tokenizer A and <code>[part-one] [part-two]</code> by tokenizer B. A contributes one success to this metric and B contributes none, even if both reconstruct the text exactly. This is a schematic example, not a claimed segmentation from your run.</p>
+        <p>The term list is not interchangeable with the full probe phrases above. The pasted output does not name the four successful terms, so we cannot identify them from these tables. Case, leading spaces, spelling, and special-token settings can change the result. This score describes coverage of this particular 20-term list, not 20% of all medical terminology, and does not establish better semantic understanding.</p>
+        <h4>5. Held-out PubMed: the main in-domain measurement</h4>
+        <div class="table-scroll"><table><caption>Reported results on 5,000 documents from pubmed_heldout.jsonl</caption><thead><tr><th scope="col">Tokenizer</th><th scope="col">Fertility</th><th scope="col">tok/100ch</th><th scope="col">Mean pieces per document</th></tr></thead><tbody>
+          <tr><th scope="row">cl100k</th><td>1.477</td><td>21.71</td><td>234.24</td></tr>
+          <tr><th scope="row">o200k</th><td>1.446</td><td>21.25</td><td>229.33</td></tr>
+          <tr><th scope="row">custom-med</th><td>1.312</td><td>19.29</td><td>208.13</td></tr>
+          <tr><th scope="row">general-bpe</th><td>1.624</td><td>23.88</td><td>257.68</td></tr>
+          <tr><th scope="row">qwen</th><td>1.509</td><td>22.18</td><td>239.36</td></tr>
+        </tbody></table></div>
+        <p>Custom-med has the lowest reported fertility, <strong>1.312</strong>, and averages <strong>208.13 tokens per abstract</strong>. Compared with general BPE's 257.68, that is about 49.55 fewer tokens per abstract, or <strong>19.2% fewer</strong>. Relative to cl100k, o200k, and qwen, the reductions are approximately 11.1%, 9.2%, and 13.0%, respectively. These percentages use the displayed, rounded means and each baseline as the denominator.</p>
+        <p>This is more informative than a few hand-picked phrases because it measures complete documents at a larger scale. Shorter encodings can fit more text into a fixed token context budget. They do not by themselves prove lower wall-clock latency, better answers, or clinical safety.</p>
+        <h4>6. Held-out general English: quantify the tradeoff</h4>
+        <div class="table-scroll"><table><caption>Reported results on 5,000 documents from general_heldout.jsonl</caption><thead><tr><th scope="col">Tokenizer</th><th scope="col">Fertility</th><th scope="col">tok/100ch</th><th scope="col">Mean pieces per document</th></tr></thead><tbody>
+          <tr><th scope="row">cl100k</th><td>1.175</td><td>22.04</td><td>155.85</td></tr>
+          <tr><th scope="row">o200k</th><td>1.166</td><td>21.87</td><td>154.65</td></tr>
+          <tr><th scope="row">custom-med</th><td>1.395</td><td>26.16</td><td>184.94</td></tr>
+          <tr><th scope="row">general-bpe</th><td>1.120</td><td>21.01</td><td>148.54</td></tr>
+          <tr><th scope="row">qwen</th><td>1.220</td><td>22.87</td><td>161.71</td></tr>
+        </tbody></table></div>
+        <p>General BPE has the lowest reported fertility here, <strong>1.120</strong>. Custom-med averages 184.94 pieces per document versus 148.54 for general BPE: about 36.40 additional tokens, or <strong>24.5% more</strong>. Read the two held-out tables together: the medical tokenizer is more compact on these PubMed abstracts but less compact on these general documents. Whether that tradeoff is worthwhile depends on the intended input mix.</p>
+        <div class="takeaway"><strong>The result in one sentence</strong><p>In this reported 32k run, custom-med uses about 19.2% fewer tokens than general BPE on held-out PubMed, about 24.5% more on held-out general English, and encodes 4 of 20 tested domain terms as single tokens. These are token-efficiency and term-coverage results, not a model-quality benchmark.</p></div>
+        <h4>What to verify before calling it a fair 32k benchmark</h4>
+        <p>The terminal headings say "FAIR eval," "should win," and "expected to lose." Those are labels, not experimental guarantees. Verify actual vocabulary sizes for both custom artifacts, training-data budgets, preprocessing, deduplication, and train/test content overlap. A held-out filename does not prove unseen data, and external baseline training overlap is not established. Keep a separate validation set if choosing between 16k and 32k; do not repeatedly tune against the final test set.</p>
+        <p>Record the artifact and dataset hashes, exact baseline versions, term list, and encoding settings before publishing a reproducible comparison. The two papers below explain why this distinction matters: tokenizer choice can affect trained models, but minimizing token counts is not sufficient evidence of downstream gains. Using this 32k vocabulary with a pretrained model still requires the <a href="#compatibility">embedding and model-adaptation work</a> described later.</p>
+      </section>
+
+      <section id="vocabulary">
+        <p class="eyebrow"><span class="section-number">08</span> Lab / vocabulary budget</p><h2>A larger vocabulary has a bill.</h2>
+        <p>More merges can shorten sequences, but rare pieces need enough evidence to be useful. Every vocabulary entry also needs an embedding row in a model built to use it. There is no universal medical vocabulary size.</p>
+        <div class="lab budget-lab"><div class="budget-controls"><label for="vocab-size">Vocabulary target <output id="vocab-label" for="vocab-size">16,000</output></label><input type="range" id="vocab-size" min="16000" max="100000" step="1000" value="16000"><label for="hidden-size">Embedding dimension</label><select id="hidden-size"><option value="1024">1,024</option><option value="2048" selected>2,048</option><option value="4096">4,096</option></select></div><div class="budget-result" aria-live="polite"><span>ONE EMBEDDING MATRIX / FP16</span><strong id="embedding-memory">62.5 MiB</strong><output id="embedding-parameters">32,768,000 parameters</output></div></div>
+        <p class="caption">Estimate = vocabulary size &times; embedding dimension &times; 2 bytes. Excludes gradients, optimizer state, activations, and the rest of the model. An untied output projection adds another vocabulary-sized matrix. This calculator predicts memory, not fertility.</p>
+        <h3>Select on validation, report on test</h3>
+        <p>The source sweep compares 16k, 32k, 50k, 64k, and 100k targets. Its knee rule selects the smallest vocabulary whose mean tokens per document is within 2% of the lowest measured value. That is a useful heuristic, not a universal optimum.</p>
+        <p>Once you have created a separate <code>data/pubmed_validation.jsonl</code>, run:</p>
+        <pre><code>uv run python scripts/sweep_vocab_size.py --corpus data/pubmed_train.jsonl --heldout data/pubmed_validation.jsonl --no-qwen</code></pre>
+        <p>The option is named <code>--heldout</code>, but use validation data for this decision. Log actual vocabulary size as well as requested size: a trainer can saturate. The source may reuse existing artifacts, so keep corpus hashes and configuration alongside them. Do not silently compare old cached vocabularies with a new training corpus.</p>
+
+        <h3 id="fertility-knee">What is the knee of the fertility curve?</h3>
+        <p>Imagine plotting <strong>actual vocabulary size on the horizontal axis</strong> and <strong>fertility on the vertical axis</strong>. With a small vocabulary, many words need several pieces. Adding useful entries can shorten those sequences. Eventually, spending thousands of extra vocabulary entries may save very few tokens. The bend between substantial gains and diminishing returns is informally called the <strong>knee</strong>, or elbow, of the curve.</p>
+        <p>The decision is not simply "pick the lowest fertility." It is "how much additional vocabulary and model memory am I buying for the remaining reduction?" A clean sweep often shows a falling curve that becomes flatter, but independently trained or mismatched cached artifacts need not follow that pattern. Lower fertility also does not establish better downstream model quality.</p>
+        <h4>A small worked example</h4>
+        <p>Suppose a controlled sweep gives mean lengths of 260, 210, 207, 206, and 205 tokens per document at actual sizes of 16k, 32k, 50k, 64k, and 100k. These are <strong>illustrative numbers, not your results</strong>. Moving from 16k to 32k saves 50 tokens per document; moving from 32k all the way to 100k saves only another 5. Visually, 32k would be a plausible elbow.</p>
+        <p>The script uses a specific shortcut rather than detecting geometric curvature: <strong>choose the smallest candidate whose mean length is no more than 2% above the best observed mean</strong>.</p>
+        <div class="formula"><span>2% threshold</span><strong>acceptable mean tokens/doc &le; best mean &times; 1.02</strong></div>
+        <p>In the illustrative example, the threshold is <code>205 &times; 1.02 = 209.10</code>. The 32k candidate at 210 narrowly fails, while 50k at 207 passes. The rule would select 50k, even though the visual bend might look closer to 32k. <strong>The 2% rule is a tunable near-best heuristic, not a mathematical proof of an optimal knee.</strong></p>
+        <p>Why use mean tokens per document when discussing fertility? On the same fixed evaluation corpus, both are proportional to total token count: <code>mean = tokens / documents</code> and <code>fertility = tokens / words</code>. Therefore, a 2% relative threshold gives the same result using either unrounded metric. Changing the evaluation corpus breaks that equivalence across runs.</p>
+        <h4>Your supplied command: two important cautions</h4>
+        <pre><code>uv run python .\scripts\sweep_vocab_size.py --corpus .\data\pubmed_heldout.jsonl --heldout .\data\pubmed_heldout.jsonl --no-qwen</code></pre>
+        <p><code>--corpus</code> specifies data for vocabulary training; <code>--heldout</code> specifies evaluation data. Here they point to the <strong>same file</strong>. If a missing candidate is trained from this configuration, it will be evaluated on its own training text, so the result is not an unseen-data measurement.</p>
+        <p>However, every candidate in your log says <code>reuse</code>. That means this execution loaded cached artifacts rather than demonstrating new training on the supplied corpus. The command alone does not establish what data originally trained those artifacts, or prove that they are contaminated. It also cannot establish that they are clean. Check their recorded training provenance before interpreting the comparison.</p>
+        <h4>Reading every column of your sweep</h4>
+        <div class="table-scroll"><table><caption>Author-supplied sweep output; labels are preserved even where they disagree with actual size</caption><thead><tr><th scope="col">Label</th><th scope="col">Requested</th><th scope="col">Actual</th><th scope="col">Avg tokens/doc</th><th scope="col">vs previous</th><th scope="col">vs 16k label</th><th scope="col">Fertility</th><th scope="col">tok/100ch</th><th scope="col">Single-token</th></tr></thead><tbody>
+          <tr><th scope="row">16k</th><td>16,000</td><td>32,000</td><td>208.1</td><td>&mdash;</td><td>&mdash;</td><td>1.312</td><td>19.29</td><td>20%</td></tr>
+          <tr><th scope="row">32k</th><td>32,000</td><td>32,000</td><td>212.9</td><td>+2.3%</td><td>+2.3%</td><td>1.342</td><td>19.73</td><td>20%</td></tr>
+          <tr><th scope="row">50k</th><td>50,000</td><td>39,024*</td><td>210.7</td><td>-1.0%</td><td>+1.2%</td><td>1.328</td><td>19.53</td><td>20%</td></tr>
+          <tr><th scope="row">64k</th><td>64,000</td><td>39,024*</td><td>210.7</td><td>+0.0%</td><td>+1.2%</td><td>1.328</td><td>19.53</td><td>20%</td></tr>
+          <tr><th scope="row">100k</th><td>100,000</td><td>39,024*</td><td>210.7</td><td>+0.0%</td><td>+1.2%</td><td>1.328</td><td>19.53</td><td>20%</td></tr>
+        </tbody></table></div>
+        <ul class="prose-list"><li><strong>Label / requested:</strong> the sweep's candidate name and intended vocabulary target, not necessarily the contents of the cached artifact.</li><li><strong>Actual:</strong> the reported loaded vocabulary size. This is the relevant size for interpreting the experiment and estimating a minimally sized embedding matrix.</li><li><strong>Avg tokens/doc:</strong> total encoded tokens divided by the 5,000 evaluation documents. Lower means shorter encodings on this set.</li><li><strong>vs previous:</strong> percentage change in mean length from the preceding row, not from a smaller verified actual vocabulary. A positive value means more tokens; a negative value means fewer.</li><li><strong>vs 16k:</strong> percentage change relative to the first row, whose artifact actually has 32,000 entries. For example, <code>(212.9 - 208.1) / 208.1 &times; 100 &asymp; +2.3%</code>.</li><li><strong>Fertility / tok/100ch:</strong> total tokens per whitespace word and per 100 characters, respectively, using the same definitions as the 32k walkthrough.</li><li><strong>Single-token:</strong> the percentage of tested domain terms encoded as one piece. All rows give 20%, but this coarse score neither proves identical tokenizers nor tells us whether the same four terms succeeded.</li></ul>
+        <h4>Why the script prints "16k" as the knee</h4>
+        <p>The lowest displayed mean is 208.1, so the threshold is approximately <code>208.1 &times; 1.02 = 212.262</code> tokens per document. The first row at 208.1 qualifies. The row labeled 32k at 212.9 does not. The 50k, 64k, and 100k rows at 210.7 qualify, but have larger requested sizes. The selection therefore returns the smallest qualifying <em>label</em>: 16k. The actual calculation can use more precision than the printed values; that does not change this example's conclusion.</p>
+        <div class="callout warning"><strong>This output does not establish that a 16k tokenizer is best.</strong><p>The winning row reports 32,000 actual entries. The reused base artifact may have been replaced or trained with a different target; the log does not establish why. There is no actual 16,000-entry candidate in this table. Describe the result as "the cached artifact labeled 16k, actually 32k, has the lowest measured mean," not "16k is the optimal vocabulary size."</p></div>
+        <p>The two 32,000-entry artifacts have different means, 208.1 and 212.9. Equal vocabulary size does not imply equal pieces, merge rules, preprocessing, or training history. Their different outputs are a reason to compare configuration and hashes, not evidence that increasing vocabulary size caused a regression. Likewise, the final three rows all have 39,024 entries: plotting them at 50k, 64k, and 100k would create a misleading impression of a measured high-vocabulary plateau.</p>
+        <h4>Saturation: why 100k requested becomes 39,024 actual</h4>
+        <p>The asterisk marks candidates whose actual vocabulary is smaller than requested. BPE cannot necessarily fill an arbitrary budget: it can stop when the corpus and pre-tokenization boundaries leave no eligible pair meeting the frequency threshold. The script attributes this to <code>min_frequency=2</code>, meaning a candidate pair needs sufficient occurrence evidence to be merged. Increasing the target alone does not provide that evidence.</p>
+        <p>The 50k, 64k, and 100k candidates all report 39,024 entries and identical rounded scores. This is consistent with saturation under the original training setup, but identical sizes and aggregate metrics do not prove byte-identical artifacts. Because this run reused them, the output does not establish that the currently supplied corpus produced that saturation. More representative training data or a changed frequency threshold could change the result, but either is a new experiment requiring validation.</p>
+        <h4>The corpus-size rule and external baselines</h4>
+        <p>The reported <code>793,122 whitespace-word tokens</code> are corpus words, not BPE tokens or distinct vocabulary entries. The script's <code>16k-32k</code> band is a rough suggestion based on corpus size, not a measured optimum. Here the supplied corpus is the same 5,000-document file used for evaluation, so this count does not establish the original training-set size of the reused artifacts.</p>
+        <p>The external baseline table reports cl100k at 100,277 entries, 234.2 tokens/document, and 1.477 fertility; o200k at 200,019 entries, 229.3 tokens/document, and 1.446 fertility. Both use more tokens here than the winning cached artifact, despite larger vocabularies. Domain fit matters, but the comparison does not control their training data or establish that the public evaluation documents were absent from it. The script's "not trained on this corpus" label should not be read as verified absence of training overlap. <code>--no-qwen</code> explains why Qwen is absent from this sweep.</p>
+        <h4>Embedding cost: use actual size, not the candidate name</h4>
+        <p>For an embedding dimension of 1,024, one matrix contains <code>vocabulary rows &times; 1,024</code> parameters. The printed cost table uses requested sizes: 16,384,000 parameters for 16k through 102,400,000 for 100k, with ratios from 1.00&times; to 6.25&times;. Those are hypothetical target-budget estimates, not costs established for the loaded artifacts.</p>
+        <div class="table-scroll"><table><caption>One embedding matrix sized to the reported actual vocabulary, at dimension 1,024</caption><thead><tr><th scope="col">Candidate labels</th><th scope="col">Actual entries</th><th scope="col">Parameters</th><th scope="col">FP16 weights</th><th scope="col">vs smallest actual</th></tr></thead><tbody>
+          <tr><th scope="row">16k and 32k</th><td>32,000</td><td>32,768,000</td><td>62.5 MiB</td><td>1.00&times;</td></tr>
+          <tr><th scope="row">50k, 64k, and 100k</th><td>39,024</td><td>39,960,576</td><td>76.22 MiB</td><td>1.22&times;</td></tr>
+        </tbody></table></div>
+        <p>These are estimates for a model configured with exactly that many rows, not measurements of an existing model. Some implementations pad the row count. An untied output projection adds another vocabulary-sized matrix; tied input/output weights share parameters, although output scoring still has a vocabulary-dependent cost. Gradients, optimizer state, activations, and the rest of the model are excluded. Training a tokenizer alone does not create these neural-model weights.</p>
+        <h4>How to obtain a trustworthy knee</h4>
+        <ol class="prose-list"><li><strong>Prepare disjoint training and validation data.</strong> Use training text for <code>--corpus</code> and validation text for <code>--heldout</code>, as in the command above. Verify document-content separation after deduplication. Keep a separate final test set; data already used to select settings is validation data.</li><li><strong>Audit cached candidates before running.</strong> Record each artifact's actual size, hash, corpus provenance, and preprocessing. Preserve existing artifacts; use separate output paths for a clean sweep and check the implementation's help for supported cache/output controls. Correcting input paths alone does not prevent cache reuse.</li><li><strong>Compare one controlled recipe.</strong> Keep training corpus, preprocessing, frequency threshold, and evaluation set fixed while changing the target. Obtain an actual 16k artifact if claiming a 16k-versus-32k comparison. Label saturated candidates by their actual sizes.</li><li><strong>Select on validation, then report once on test.</strong> Apply the 2% tolerance to unrounded means, weigh actual memory and out-of-domain costs, and evaluate the selected artifact on untouched test data. Evaluate downstream model quality separately before claiming a better language model.</li></ol>
+        <div class="takeaway"><strong>What this run tells us</strong><p>The lowest reported mean belongs to a 32,000-entry cached artifact, and the larger requested candidates saturate at 39,024 entries. The log is useful for diagnosing labels, cache reuse, and budget assumptions, but it does not establish a clean fertility curve or an optimal 16k vocabulary.</p></div>
+      </section>
+
+      <section id="export">
+        <p class="eyebrow"><span class="section-number">09</span> An artifact you can reproduce</p><h2>Save it. Reload it. Check it.</h2>
+        <p>A vocabulary list alone is not the tokenizer. You also need merge rules, pre-tokenization, decoding, and special-token settings. The serialized <code>tokenizer.json</code> stores the tokenizer pipeline.</p>
+        <pre><code class="language-python">from tokenizers import Tokenizer
+
+tokenizer = Tokenizer.from_file(
+    "artifacts/medical-bpe-pubmed/tokenizer.json"
+)
+text = "BRCA1: 5 mg, 37\u00b0C, \u03b2-blocker."
+encoded = tokenizer.encode(text, add_special_tokens=False)
+print(encoded.tokens)
+print(encoded.ids)
+assert tokenizer.decode(encoded.ids, skip_special_tokens=False) == text</code></pre>
+        <p>This check is for ordinary text. Reserved special-token strings and automatic special-token insertion require explicit application-level tests. Test empty strings, repeated whitespace, leading spaces, punctuation, and multilingual examples as well.</p>
+        <h3>Wrap for the Transformers API</h3>
+        <pre><code>uv run python scripts/wrap_medical_tokenizer.py --tokenizer-json artifacts/medical-bpe-pubmed/tokenizer.json --out artifacts/medical-bpe-pubmed-hf</code></pre>
+        <pre><code class="language-python">from transformers import PreTrainedTokenizerFast
+
+tokenizer = PreTrainedTokenizerFast.from_pretrained(
+    "artifacts/medical-bpe-pubmed-hf"
+)</code></pre>
+        <p>The wrapper declares EOS and padding tokens and saves a Hugging Face-compatible directory. It does not train a model, create meaningful embeddings, or add a chat template. Before publishing, document corpus rights, filtering, intended domains, library versions, special-token IDs, artifact hashes, and limitations.</p>
+      </section>
+
+      <section id="compatibility">
+        <p class="eyebrow"><span class="section-number">10</span> The boundary that matters</p><h2>New tokenizer. Not a drop-in model upgrade.</h2>
+        <p>A pretrained model associates each token ID with a learned embedding. In a new vocabulary, the same ID may refer to a different piece. Matching vocabulary sizes or resizing embeddings does not repair that semantic mismatch.</p>
+        <div class="compatibility-grid"><div><span class="path-label">EXISTING MODEL</span><h3>Keep its tokenizer.</h3><p>For ordinary fine-tuning or LoRA, use the model's stock tokenizer and formatting. Domain adaptation does not require replacing its vocabulary.</p></div><div><span class="path-label">YOUR TOKENIZER</span><h3>Plan model training.</h3><p>Train a compatible model from scratch, or undertake a separately evaluated vocabulary-adaptation procedure with embedding initialization and continued training.</p></div></div>
+        <p>Changing tokenizer files alone is neither of those procedures. Treat medtok as a tokenizer training and measurement experiment, not proof that a pretrained LLM has gained medical expertise.</p>
+      </section>
+
+      <section id="checklist">
+        <p class="eyebrow"><span class="section-number">11</span> Reproducibility checklist</p><h2>What a credible result includes.</h2>
+        <ul class="checklist"><li>Corpus provenance, permissions, deduplication rules, and content hashes.</li><li>Disjoint train, validation, and test data with explicit split logic.</li><li>Byte-level configuration, minimum frequency, special tokens, and actual vocabulary sizes.</li><li>Same-recipe medical and general controls, with training sizes reported in bytes as well as documents.</li><li>Both evaluation domains, exact metric definitions, sample counts, and baseline versions.</li><li>Round-trip tests, serialized artifact hashes, and a successful reload.</li><li>A separate model-compatibility plan, with no claims of clinical quality from token counts alone.</li></ul>
+        <pre><code>uv run pytest tests/test_medical_compare.py tests/test_vocab_sweep.py -v
+uv run jupyter lab notebooks/04_custom_vs_general.ipynb</code></pre>
+        <p>The notebook is the practical companion. It can load a tiny fallback if the full artifact is absent; check which artifact is active before interpreting its results.</p>
+      </section>
+
+      <section id="papers">
+        <p class="eyebrow"><span class="section-number">12</span> Interesting papers</p><h2>Research worth reading</h2>
+        <p class="paper-label">1st paper</p><h3 class="paper-title">How Good is Your Tokenizer?</h3>
+        <p><strong>Paper:</strong> <a href="https://arxiv.org/pdf/2012.15613">How Good is Your Tokenizer? On the Monolingual Performance of Multilingual Language Models</a></p>
+        <h4>Core claim</h4>
+        <p>This paper asks why monolingual models often beat multilingual ones on single-language tasks. The authors argue that the answer is not simply "monolingual is smarter." A large share of the difference comes from two concrete factors: <strong>how much training data the model saw in that language</strong> and <strong>how well the tokenizer fits that language</strong>.</p>
+        <p><strong>Main conclusion:</strong> multilingual models are often not weaker by design. They are frequently disadvantaged because they must process some languages with less suitable token pieces.</p>
+        <h4>How the paper reasons about the problem</h4>
+        <p>The paper treats tokenization as part of the model, not as a small preprocessing detail. The authors compare multilingual BERT with monolingual BERT models across nine languages and five tasks, then measure whether the multilingual tokenizer breaks words into too many fragments. They use measures such as <strong>fertility</strong>, the average number of subword pieces per word, and the proportion of words that get split across multiple pieces.</p>
+        <p>The logic is straightforward: if a word that could have been represented as one meaningful unit is instead broken into many fragments, the model must reconstruct meaning from a noisier input. That increases sequence length and can make morphology harder to learn, especially in languages where suffixes and internal word structure carry a lot of information.</p>
+        <h4>Simple example</h4>
+        <p>Imagine a medical or technical word that appears often in one language. A tokenizer specialized for that language may learn a compact, stable representation for it, while a shared multilingual tokenizer may split it into several smaller fragments because its vocabulary budget is spread across many languages. The model then sees the same concept through more pieces, more positions, and more chances for ambiguity. The paper's point is that this difference is not cosmetic; it can change downstream task performance.</p>
+        <p>A useful picture is limited shelf space. A monolingual tokenizer gives most of the shelf to one language. A multilingual tokenizer must share that same shelf across many languages. English, Japanese, or Chinese may already be represented reasonably well, but languages like Finnish, Turkish, Korean, and Arabic are more likely to lose useful vocabulary coverage and end up with longer, more fragmented token sequences.</p>
+        <h4>What the experiments show</h4>
+        <p>The strongest part of the paper is the controlled experiment. The authors train new models on the same language data but swap tokenizers, which lets them separate the effect of training data size from the effect of tokenization. The pattern is clear: specialized monolingual tokenizers usually improve downstream results, especially for Finnish, Turkish, Korean, and Arabic. For English, Japanese, and Chinese, where the multilingual tokenizer already fits better, the gap is much smaller.</p>
+        <div class="takeaway"><strong>Why it matters here</strong><p>For this project, the paper is a reminder that fewer token pieces can be meaningful evidence about tokenizer quality, but only when the comparison is controlled. A domain tokenizer can help because it learns better pieces for the text you care about, not because token count alone proves a better model.</p></div>
+        <p class="paper-label">2nd paper</p><h3 class="paper-title">Tokenization Is More Than Compression</h3>
+        <p><strong>Paper:</strong> <a href="https://arxiv.org/pdf/2402.18376">Tokenization Is More Than Compression</a></p>
+        <p>This paper pushes back on a tempting idea: if a tokenizer turns text into fewer tokens, it should automatically be better. The authors build that challenge into the experiment itself by introducing <strong>PathPiece</strong>, a tokenizer whose segmentation explicitly tries to use the fewest possible tokens for a given vocabulary. If compression alone were the main reason tokenizers work well, this kind of setup should dominate.</p>
+        <h4>Core claim</h4>
+        <p>The authors argue that <strong>good tokenization is not just about compression</strong>. A tokenizer that produces fewer tokens does not automatically lead to better downstream performance. What matters is how the tokenizer is designed across three stages:</p>
+        <ol class="prose-list"><li><strong>Pre-tokenization</strong></li><li><strong>Vocabulary construction</strong></li><li><strong>Segmentation</strong></li></ol>
+        <p><strong>Main conclusion:</strong> effective tokenization gives the model useful structure, not just shorter sequences.</p>
+        <h4>What the paper actually tested</h4>
+        <p>The authors trained a large set of language models while varying tokenizers, vocabulary-building methods, segmentation rules, and vocabulary sizes. Their most direct test was PathPiece itself: a tokenizer designed to minimize token count as aggressively as possible. If the simple rule "fewer tokens means better models" were true, PathPiece should consistently win. It does not.</p>
+        <p>Across their experiments, several tokenizers perform competitively, and no single method dominates purely because it compresses more. In fact, some choices that reduce token count too aggressively produce awkward token pieces, especially when boundaries around spaces are not handled carefully. That hurts the quality of the representation even if the sequence gets shorter.</p>
+        <h4>Simple example</h4>
+        <p>The paper gives a useful intuition here. Suppose a tokenizer is allowed to chase the smallest possible token count with very weak boundary constraints. It might create pieces that cross word boundaries or bundle part of one word with part of the next. That looks efficient on paper because the sequence is shorter, but it gives the model a less natural unit to learn from. The model saves tokens and loses clarity.</p>
+        <p>That is why the paper separates three stages: pre-tokenization decides where boundaries are allowed, vocabulary construction decides which pieces exist, and segmentation decides how those pieces are used on real text. A tokenizer can look good on the compression metric while making poor choices at one of those stages.</p>
+        <h4>Why this matters</h4>
+        <p>That result is important because it separates <em>efficiency</em> from <em>usefulness</em>. A tokenizer can save tokens but still make the model's job harder by breaking text into unnatural pieces. The paper shows that preserving cleaner structure, especially around word boundaries and the way vocabularies are initialized, can matter as much as raw compression.</p>
+        <p>The practical message is useful for this project: token count is only one symptom. A tokenizer that aggressively compresses text can still produce unnatural pieces that make the model's job harder. The paper's broader conclusion is that effective tokenization is about giving the model a representation that is efficient <em>and</em> structurally helpful, not merely short.</p>
+        <div class="takeaway"><strong>Why it matters here</strong><p>For medtok, this is a guardrail against overclaiming. If a custom medical tokenizer uses fewer pieces, that is interesting, but it is not sufficient evidence by itself. The real question is whether the vocabulary creates cleaner, more useful units for the model and whether that advantage survives controlled evaluation.</p></div>
+      </section>
+
+      <section id="references">
+        <p class="eyebrow"><span class="section-number">13</span> Keep reading the code</p><h2>Notes tied to an implementation.</h2>
+        <p>Source inspected September 8, 2026. <strong>medtok</strong> is the planned name of the sibling <code>tokenization-explainer</code> project. Source links target the author's <code>gaurav36/med-tok</code> GitHub repository and require access to that repository.</p>
+        <div class="source-list"><a data-source="scripts/train_medical_tokenizer.py" href="https://github.com/gaurav36/med-tok/blob/main/scripts/train_medical_tokenizer.py"><strong>The BPE trainer</strong><code>build_byte_level_bpe / train_byte_level_bpe</code><span>&nearr;</span></a><a data-source="scripts/split_corpus.py" href="https://github.com/gaurav36/med-tok/blob/main/scripts/split_corpus.py"><strong>The data split</strong><code>split_jsonl</code><span>&nearr;</span></a><a data-source="scripts/compare_tokenizers.py" href="https://github.com/gaurav36/med-tok/blob/main/scripts/compare_tokenizers.py"><strong>The evaluation contract</strong><code>fertility / build_columns</code><span>&nearr;</span></a><a data-source="scripts/sweep_vocab_size.py" href="https://github.com/gaurav36/med-tok/blob/main/scripts/sweep_vocab_size.py"><strong>The vocabulary experiment</strong><code>recommend_vocab / train_or_load</code><span>&nearr;</span></a><a data-source="scripts/wrap_medical_tokenizer.py" href="https://github.com/gaurav36/med-tok/blob/main/scripts/wrap_medical_tokenizer.py"><strong>The serialized wrapper</strong><code>wrap_tokenizer</code><span>&nearr;</span></a><a data-source="notebooks/04_custom_vs_general.ipynb" href="https://github.com/gaurav36/med-tok/blob/main/notebooks/04_custom_vs_general.ipynb"><strong>The hands-on notebook</strong><code>04_custom_vs_general.ipynb</code><span>&nearr;</span></a></div>
+        <h3>Library references</h3><ul class="prose-list"><li><a href="https://huggingface.co/docs/tokenizers/pipeline">Hugging Face Tokenizers: the pipeline</a></li><li><a href="https://huggingface.co/docs/tokenizers/api/trainers">BpeTrainer API</a></li><li><a href="https://huggingface.co/docs/transformers/main_classes/tokenizer">Transformers tokenizer API</a></li><li><a href="https://github.com/openai/tiktoken">tiktoken: baseline encodings</a></li><li><a href="diagrams/index.html">Visual reference: pipeline, experiment, model boundary</a></li></ul>
+        <details><summary>Quick glossary</summary><dl><dt>Vocabulary</dt><dd>The mapping between token pieces and integer IDs.</dd><dt>Merge rule</dt><dd>A learned instruction to combine an adjacent pair of pieces, applied according to its rank.</dd><dt>Fertility</dt><dd>The ratio of total tokens to total whitespace-delimited words in this experiment.</dd><dt>Byte-level BPE</dt><dd>BPE over a reversible byte alphabet, with a pre-tokenizer defining eligible chunks.</dd><dt>Held-out set</dt><dd>Data excluded from training. If used to choose settings, it is validation data, not an untouched final test.</dd></dl></details>
+      </section>
+    </article>
+    <footer><span>Building a Medical Tokenizer</span><a href="#overview">Back to the beginning &uarr;</a><p>A companion to medtok. Tokenization engineering, not medical advice.</p></footer>
+  </main>
+</body>
+</html>
