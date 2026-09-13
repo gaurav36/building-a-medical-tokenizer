@@ -135,3 +135,7 @@ The [Pages workflow](.github/workflows/pages.yml) runs `npm test` and publishes 
 GitHub Pages derives the path from the repository name: `building-a-medical-tokenizer`. The workflow itself is independent of the repository name. Adding the workflow does not publish the site by itself; enable GitHub Pages with **GitHub Actions** as the source and wait for a successful deployment.
 
 Implementation links, including no-JavaScript fallbacks, target `https://github.com/gaurav36/med-tok/blob/main`. That repository must be accessible to readers. To use a local implementation checkout instead, clear `repositoryUrl` in [site/js/source.js](site/js/source.js) and set `localDirectory` to its sibling folder name. This local override requires JavaScript and is not suitable for the public deployment.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
