@@ -6,9 +6,9 @@ A static, long-form engineering blog about building a medical-domain tokenizer. 
 
 The sidebar footer highlights [Tokenization Deep Dive](https://gaurav36.github.io/tokenization-explanation/) under "Start with tokenization basics" with larger, bold link text. Like the rest of the sidebar footer, this link is hidden in the compact mobile layout.
 
-The practical implementation lives in `../tokenization-explainer`, referred to here as **medtok**, its planned name. This project does not rename or modify either sibling repository, duplicate the production trainer, or train a language model.
+The practical implementation lives in `../tokenization-explainer`, referred to here as [**medtok**](https://github.com/gaurav36/med-tok), its planned name. This project does not rename or modify either sibling repository, duplicate the production trainer, or train a language model.
 
-The author identifies [gaurav36/med-tok](https://github.com/gaurav36/med-tok) as the implementation repository used to build the custom medical tokenizer. The [Colab playbook](https://colab.research.google.com/drive/171axehMMfnunm1UVjT2EIi212YHbhOKo?usp=sharing) explores the published 16k and 32k variants. The [blog walkthrough](site/index.html#colab-playbook) includes supplied medical outputs, a GPT-5 comparison cell using tiktoken, token-ID mapping, and decoding checks. GPT-5 output remains unverified: the supplied result repeats the medical-16k pieces and is not attributed to GPT-5. These are not independently rerun or revision-pinned results; the Colab required sign-in and GitHub returned 404 when fetched for the initial update. Source links now use the author's GitHub repository independently of the local checkout layout; repository access is still required.
+The author identifies [gaurav36/med-tok](https://github.com/gaurav36/med-tok) as the implementation repository used to build the custom medical tokenizer. The [Colab playbook](https://colab.research.google.com/drive/171axehMMfnunm1UVjT2EIi212YHbhOKo?usp=sharing) loads the published 6k artifact and includes a separate GPT-5 comparison cell using tiktoken. The [blog walkthrough](site/index.html#colab-playbook) explains the Python code, token-ID mapping, byte-level piece inspection, and round-trip decoding checks. GPT-5 output remains unverified until the cell is run in the linked Colab. These are not independently rerun or revision-pinned results; the Colab required sign-in and GitHub returned 404 when fetched for the initial update. Source links now use the author's GitHub repository independently of the local checkout layout; repository access is still required.
 
 ## Run Locally
 
@@ -71,7 +71,7 @@ Training commands in the article run from the **implementation repository**, not
 
 Implementation inspected on 2026-09-08:
 
-| Topic | Path inside medtok |
+| Topic | Path inside [medtok](https://github.com/gaurav36/med-tok) |
 | --- | --- |
 | Corpus input, byte alphabet, BPE options | `scripts/train_medical_tokenizer.py` |
 | Seeded train/test row split | `scripts/split_corpus.py` |
@@ -103,7 +103,7 @@ site/diagrams/index.html      Pipeline, evaluation, and model-boundary diagrams
 tests/                       Metric and snapshot checks
 ```
 
-The practical notebooks stay in medtok; this companion does not duplicate them. The article links to `notebooks/04_custom_vs_general.ipynb` in that checkout.
+The practical notebooks stay in [medtok](https://github.com/gaurav36/med-tok); this companion does not duplicate them. The article links to `notebooks/04_custom_vs_general.ipynb` in that checkout.
 
 ## Regenerate The Inspection Lab
 

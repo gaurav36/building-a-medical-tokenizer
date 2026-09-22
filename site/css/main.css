@@ -35,7 +35,7 @@ button, select, input { font: inherit; }
 .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-size: 15px; font-weight: 600; line-height: 1.35; margin-bottom: 40px; }
 .brand-mark { display: grid; grid-template-columns: 1fr 1fr; align-items: baseline; padding: 4px 8px; border: 1px solid var(--teal); color: var(--teal); font: 23px var(--mono); }
 .brand-mark span { color: var(--blue); }
-.eyebrow, .topline, .article-meta, .sidebar-footer, .path-label { font-family: var(--mono); font-size: 11px; }
+.eyebrow, .topline, .sidebar-footer, .path-label { font-family: var(--mono); font-size: 11px; }
 .eyebrow { color: var(--teal); text-transform: uppercase; margin: 0 0 15px; }
 .sidebar > .eyebrow { color: var(--muted); margin-bottom: 16px; }
 nav ol { list-style: none; padding: 0; margin: 0; }
@@ -60,7 +60,6 @@ h1 { font-size: 48px; margin: 16px 0 10px; }
 .basics-link > span { display: block; color: var(--ink); font-size: 14px; }
 .basics-link a { display: inline-block; padding: 8px 0; font-size: 18px; font-weight: 600; line-height: 1.6; }
 .lede { font-size: 19px; line-height: 1.8; max-width: 65ch; }
-.article-meta { display: flex; flex-wrap: wrap; gap: 10px 24px; padding: 18px 0; margin: 25px 0; border-block: 1px solid var(--line); color: var(--muted); }
 p { margin: 18px 0; max-width: 76ch; }
 strong { font-weight: 600; }
 section { padding: 58px 0 0; margin-top: 54px; border-top: 1px solid var(--line); }

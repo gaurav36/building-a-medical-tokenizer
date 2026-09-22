@@ -14,7 +14,7 @@
 <body>
   <main class="diagram-page">
     <a href="../index.html">&larr; Building a Medical Tokenizer</a>
-    <header><p class="eyebrow">Companion diagrams / medtok</p><h1>From corpus to token IDs.</h1><p>Three boundaries to keep distinct: learning a vocabulary, evaluating it, and connecting it to a model.</p></header>
+    <header><p class="eyebrow">Companion diagrams / <a href="https://github.com/gaurav36/med-tok">medtok</a></p><h1>From corpus to token IDs.</h1><p>Three boundaries to keep distinct: learning a vocabulary, evaluating it, and connecting it to a model.</p></header>
     <section id="byte-pipeline"><p class="eyebrow">01 / The tokenizer pipeline</p><h2>Training learns. Encoding applies.</h2>
       <ol class="pipeline"><li><span>TRAINING INPUT</span><strong>Prepared medical documents</strong><p>Deduplicate and split. Only training documents supply the pair frequencies.</p></li><li><span>TRAINING OUTPUT</span><strong>Vocabulary + ranked merges</strong><p>ByteLevel pre-tokenization, a 256-byte alphabet, and BPE with a 16k target.</p></li><li><span>ENCODING INPUT</span><strong>Previously unseen text</strong><p>Use the frozen pre-tokenizer and learned merges. No new vocabulary is learned.</p></li><li><span>ENCODING OUTPUT</span><strong>Pieces mapped to IDs</strong><p>The byte-level decoder reconstructs text from the complete ID sequence.</p></li></ol>
       <div class="formula"><span>Text</span><strong>pre-tokenize &rarr; apply BPE &rarr; IDs &rarr; decode</strong></div>
